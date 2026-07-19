@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skyblock Skies</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+    <style>
+      :root { --pixel-font: 'Press Start 2P', monospace; }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      body { margin:0; overflow:hidden; background:#2a4162; color:#fff; font-family:var(--pixel-font); }
+      canvas { display:block; }
+      button { font-family:var(--pixel-font); cursor:pointer; }
+      #menu {
+        position:fixed; inset:0; z-index:10; display:grid; place-items:center; padding:18px;
+        background-color:#65452d;
+        background-image:
+          linear-gradient(45deg,#00000018 25%,transparent 25%), linear-gradient(-45deg,#00000018 25%,transparent 25%),
+          linear-gradient(45deg,transparent 75%,#00000018 75%), linear-gradient(-45deg,transparent 75%,#00000018 75%),
+          linear-gradient(#885f3a,#5a3b28);
+        background-size:32px 32px,32px 32px,32px 32px,32px 32px,100% 100%;
+        background-position:0 0,0 16px,16px -16px,-16px 0,0 0;
+      }
+      #menu.hidden { display:none; }
+      .menu-panel { width:min(620px,100%); padding:26px 24px; text-align:center; border:5px solid #17100d; outline:4px solid #b7986f; background:#3a2b23eF; box-shadow:12px 12px 0 #16100ccd; }
+      h1 { margin:0; color:#f4f0d4; font-size:clamp(27px,7vw,52px); line-height:1.28; text-shadow:4px 4px 0 #16100d,8px 8px 0 #0008; }
+      .tagline { margin:20px auto 24px; max-width:465px; color:#d8e6ef; font-size:11px; line-height:1.9; }
+      .pixel-button { width:min(390px,100%); padding:18px 12px; border:4px solid #151515; outline:3px solid #e4e4e4; background:linear-gradient(#a8a8a8 0 47%,#777 48% 100%); color:#fff; text-shadow:2px 2px #333; font-size:14px; box-shadow:5px 5px 0 #080808; }
+      .pixel-button:hover { transform:translate(-2px,-2px); outline-color:#fff; background:linear-gradient(#c4c4c4 0 47%,#939393 48% 100%); box-shadow:8px 8px 0 #080808; }
+      .pixel-button:active { transform:translate(3px,3px); box-shadow:2px 2px 0 #080808; }
+      .network-card { margin:24px auto 0; max-width:500px; padding:13px; border:3px solid #16100d; background:#1d2930; color:#bde8ff; font-size:10px; line-height:1.8; word-break:break-word; }
+      .network-card strong { color:#fff19b; }
+      #menu-status { min-height:18px; margin:17px 0 0; color:#fff19b; font-size:9px; }
+      #hud { position:fixed; inset:0; z-index:4; pointer-events:none; display:none; text-shadow:2px 2px #000; }
+      #hud.show { display:block; }
+      #flight-readout { position:absolute; top:20px; left:20px; padding:11px; border:2px solid #9dc5d2; background:#0b1727aa; font-size:10px; line-height:2.05; }
+      #health-track { width:165px; height:12px; margin-top:5px; border:2px solid #111; background:#2b1515; }
+      #health-fill { height:100%; width:100%; background:#7ddd44; transition:width .12s; }
+      #center-reticle { position:absolute; left:50%; top:50%; width:28px; height:28px; transform:translate(-50%,-50%); opacity:.8; }
+      #center-reticle::before, #center-reticle::after { content:''; position:absolute; background:#d9f6ff; box-shadow:0 0 4px #7ce9ff; }
+      #center-reticle::before { width:2px; height:28px; left:13px; top:0; } #center-reticle::after { height:2px; width:28px; top:13px; left:0; }
+      #cockpit-glass { position:absolute; inset:0; background:linear-gradient(115deg,transparent 20%,#c9f1ff0c 46%,#d5f6ff18 49%,transparent 52%),linear-gradient(0deg,#02081272 0 9%,transparent 27%); }
+      #cockpit-glass::after { content:''; position:absolute; inset:12px; border:2px solid #acdbe544; clip-path:polygon(8% 0,92% 0,100% 16%,100% 84%,92% 100%,8% 100%,0 84%,0 16%); }
+      #toast { position:absolute; left:50%; top:24%; transform:translateX(-50%); color:#fff8a1; font-size:13px; text-align:center; white-space:nowrap; }
+      #hint { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); color:#e7f5ff; font-size:9px; text-align:center; white-space:nowrap; }
+      #touch-controls { position:fixed; z-index:6; inset:0; display:none; pointer-events:none; }
+      #touch-controls.show { display:block; }
+      #joystick-zone { position:absolute; left:16px; bottom:22px; width:150px; height:150px; pointer-events:auto; border:2px solid #d8f8ff42; border-radius:50%; background:#0c1d2f44; }
+      #fire-button { position:absolute; right:25px; bottom:46px; width:110px; height:110px; border:4px solid #ffd995aa; border-radius:50%; background:#cf3b3077; color:#fff1d1; text-shadow:2px 2px #571716; font-size:17px; pointer-events:auto; touch-action:none; }
+      #fire-button:active { background:#f15d48bb; transform:scale(.94); }
+      @media (pointer:coarse) { #hint { display:none; } #flight-readout { top:12px; left:12px; font-size:8px; } }
+      @media (max-width:460px) { .menu-panel { padding:21px 16px; } .tagline { font-size:9px; } .pixel-button { font-size:11px; } }
+    </style>
+  </head>
+  <body>
+    <section id="menu">
+      <div class="menu-panel">
+        <h1>SKYBLOCK<br>SKIES</h1>
+        <p class="tagline">A local-network jet dogfight. Launch a fighter, find your target, and own the blocky skies.</p>
+        <button id="start-game" class="pixel-button">START GAME</button>
+        <div class="network-card"><strong>JOIN FROM ANOTHER DEVICE</strong><br><span id="lan-url">Finding your local address…</span><br><br>Connect to the same router, then enter this address in a browser.</div>
+        <p id="menu-status">Connecting to hangar…</p>
+      </div>
+    </section>
+    <section id="hud">
+      <div id="cockpit-glass"></div><div id="center-reticle"></div><div id="toast"></div>
+      <div id="flight-readout">HP <span id="health">100</span> / 100<div id="health-track"><div id="health-fill"></div></div>SCORE <span id="score">0</span><br>TEAM <span id="team">—</span><br>THROTTLE <span id="throttle">45</span>%</div>
+      <div id="hint">MOUSE: AIM & AUTO-BANK · W/S: THROTTLE · A/D: ROLL · LEFT CLICK: FIRE · ESC: RELEASE MOUSE</div>
+    </section>
+    <section id="touch-controls"><div id="joystick-zone"></div><button id="fire-button">FIRE</button></section>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.2/dist/nipplejs.min.js"></script>
+    <script type="module" src="./client.js"></script>
+  </body>
+</html>

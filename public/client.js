@@ -54,6 +54,7 @@ const touchControls = document.querySelector('#touch-controls');
 const toast = document.querySelector('#toast');
 const keys = new Set();
 const remotePlayers = new Map();
+const npcs = new Map();
 const bullets = [];
 const scratchForward = new THREE.Vector3();
 const scratchCameraOffset = new THREE.Vector3();
@@ -128,6 +129,22 @@ function makeRemote(player) {
   scene.add(mesh); remotePlayers.set(player.id, remote); updateRemote(remote, player, true);
 }
 
+function makeNPC(npc) {
+  const mesh = createFighterJet(npc.color);
+  const indicator = new THREE.Mesh(
+    new THREE.RingGeometry(1.5, 1.8, 8),
+    new THREE.MeshBasicMaterial({ color: npc.team === 'blue' ? '#4da6ff' : '#ff6b4d', side: THREE.DoubleSide, transparent: true, opacity: 0.3 })
+  );
+  indicator.rotation.x = -Math.PI / 2;
+  indicator.position.y = 2.5;
+  mesh.add(indicator);
+  mesh.userData.isNPC = true;
+  mesh.userData.team = npc.team;
+  
+  const npcObj = { mesh, targetPosition: new THREE.Vector3(), targetQuaternion: new THREE.Quaternion(), npc, indicator };
+  scene.add(mesh); npcs.set(npc.id, npcObj); updateNPC(npcObj, npc, true);
+}
+
 function updateRemote(remote, player, snap = false) {
   remote.player = player;
   remote.targetPosition.set(player.position.x, player.position.y, player.position.z);
@@ -136,7 +153,20 @@ function updateRemote(remote, player, snap = false) {
   remote.mesh.visible = !player.deadUntil;
 }
 
+function updateNPC(npcObj, npc, snap = false) {
+  npcObj.npc = npc;
+  npcObj.targetPosition.set(npc.position.x, npc.position.y, npc.position.z);
+  npcObj.targetQuaternion.set(npc.rotation.x, npc.rotation.y, npc.rotation.z, npc.rotation.w);
+  if (snap) { npcObj.mesh.position.copy(npcObj.targetPosition); npcObj.mesh.quaternion.copy(npcObj.targetQuaternion); }
+  npcObj.mesh.visible = !npc.deadUntil;
+  if (npcObj.indicator) npcObj.indicator.visible = !npc.deadUntil;
+}
+
 function applyPlayer(player, snap = false) {
+  if (player.isNPC) {
+    applyNPC(player, snap);
+    return;
+  }
   if (player.id === localId) {
     score = player.score; health = player.health; updateHud();
     if (snap && localPlayer) {
@@ -150,15 +180,26 @@ function applyPlayer(player, snap = false) {
   updateRemote(remotePlayers.get(player.id), player, snap);
 }
 
+function applyNPC(npc, snap = false) {
+  if (!npcs.has(npc.id)) makeNPC(npc);
+  updateNPC(npcs.get(npc.id), npc, snap);
+}
+
 function removeRemote(id) {
   const remote = remotePlayers.get(id);
   if (remote) { scene.remove(remote.mesh); remotePlayers.delete(id); }
 }
 
+function removeNPC(id) {
+  const npc = npcs.get(id);
+  if (npc) { scene.remove(npc.mesh); npcs.delete(id); }
+}
+
 function spawnBullet(data) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.13, 8, 8), new THREE.MeshBasicMaterial({ color: '#fff2a8' }));
+  const color = data.isNPC ? (data.team === 'blue' ? '#4da6ff' : '#ffaa44') : '#fff2a8';
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.13, 8, 8), new THREE.MeshBasicMaterial({ color }));
   mesh.position.set(data.position.x, data.position.y, data.position.z); scene.add(mesh);
-  bullets.push({ mesh, direction: new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z), age: 0 });
+  bullets.push({ mesh, direction: new THREE.Vector3(data.direction.x, data.direction.y, data.direction.z), age: 0, isNPC: data.isNPC });
 }
 
 function updateHud() {
@@ -206,7 +247,7 @@ renderer.domElement.addEventListener('click', () => {
 document.addEventListener('pointerlockchange', () => {
   if (gameStarted && !isTouchDevice && document.pointerLockElement !== renderer.domElement) setToast('MOUSE RELEASED — CLICK TO AIM', 2200);
 });
-document.addEventListener('mousemove', (event) => {
+document.addEventEventListener('mousemove', (event) => {
   if (!gameStarted || isTouchDevice || document.pointerLockElement !== renderer.domElement || !localPlayer || health <= 0) return;
   localPlayer.mesh.rotateY(-event.movementX * .0023);
   localPlayer.mesh.rotateX(-event.movementY * .0018);
@@ -263,28 +304,35 @@ function updateCamera() {
   camera.quaternion.copy(localPlayer.mesh.quaternion);
 }
 
-socket.on('welcome', ({ id, player, players }) => {
+socket.on('welcome', ({ id, player, players, npcs: npcList }) => {
   localId = id;
   localPlayer = { player, mesh: createFighterJet(player.color), velocity: 65 };
   // The local aircraft is still the flight transform, but hidden so it cannot block the pilot's view.
   localPlayer.mesh.visible = false; scene.add(localPlayer.mesh);
   applyPlayer(player, true); (players || []).forEach((other) => applyPlayer(other, true));
-  menuStatus.textContent = `HANGAR READY · ${players?.length || 1}/4 PILOTS CONNECTED`;
+  (npcList || []).forEach((npc) => applyNPC(npc, true));
+  menuStatus.textContent = `HANGAR READY · ${(players?.length || 1) + (npcList?.length || 0)}/8 PILOTS CONNECTED`;
   startButton.textContent = 'START GAME'; updateHud();
 });
 socket.on('playerJoined', (player) => { if (player.id !== localId) applyPlayer(player, true); });
+socket.on('npcSpawned', (npc) => applyNPC(npc, true));
 socket.on('playerLeft', removeRemote);
-socket.on('snapshot', (players) => players.forEach((player) => applyPlayer(player)));
+socket.on('npcDestroyed', removeNPC);
+socket.on('snapshot', (players, npcs) => { players.forEach((p) => applyPlayer(p)); npcs.forEach((n) => applyNPC(n)); });
 socket.on('bulletFired', spawnBullet);
 socket.on('playerHit', ({ victimId, health: updatedHealth }) => { if (victimId === localId) { health = updatedHealth; updateHud(); } });
 socket.on('playerDestroyed', ({ victimId, shooterId }) => {
   if (victimId === localId) setToast('JET DESTROYED — RESPAWNING', 3000);
   if (shooterId === localId) { score += 1; updateHud(); setToast('TARGET SPLASHED!', 1200); }
 });
+socket.on('npcDestroyed', ({ victimId, shooterId }) => {
+  if (shooterId === localId) { score += 1; updateHud(); setToast('BOT DESTROYED!', 1000); }
+});
 socket.on('playerRespawned', (player) => {
   if (player.id === localId) { health = player.health; applyPlayer(player, true); setToast('RESPAWNED — BACK IN THE FIGHT', 1400); }
   else applyPlayer(player, true);
 });
+socket.on('npcRespawned', (npc) => applyNPC(npc, true));
 socket.on('serverFull', () => { menuStatus.textContent = 'HANGAR FULL — FOUR PILOTS MAX'; startButton.disabled = true; });
 
 function animate(now) {
@@ -294,6 +342,10 @@ function animate(now) {
   for (const remote of remotePlayers.values()) {
     remote.mesh.position.lerp(remote.targetPosition, 1 - Math.exp(-14 * dt));
     remote.mesh.quaternion.slerp(remote.targetQuaternion, 1 - Math.exp(-14 * dt));
+  }
+  for (const npc of npcs.values()) {
+    npc.mesh.position.lerp(npc.targetPosition, 1 - Math.exp(-14 * dt));
+    npc.mesh.quaternion.slerp(npc.targetQuaternion, 1 - Math.exp(-14 * dt));
   }
   for (let index = bullets.length - 1; index >= 0; index--) {
     const bullet = bullets[index]; bullet.age += dt; bullet.mesh.position.addScaledVector(bullet.direction, 165 * dt);
